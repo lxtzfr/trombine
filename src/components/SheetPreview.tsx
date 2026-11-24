@@ -1,6 +1,5 @@
 import { Box, Paper, Stack, Text } from '@mantine/core'
-import { PHOTO_H, PHOTO_W } from '#/lib/image'
-import { PAGE_H, PAGE_W, computeCutLines } from '#/lib/layout'
+import { computeCutLines } from '#/lib/layout'
 import type { SheetLayout, SheetSettings } from '#/lib/layout'
 import type { Person } from '#/lib/types'
 
@@ -15,6 +14,7 @@ interface SheetPreviewProps {
 
 export function SheetPreview({ layout, persons, settings }: SheetPreviewProps) {
   const thumbs = new Map(persons.map((person) => [person.id, person.thumb]))
+  const { page, photo } = settings
   const pages = layout.pages.length > 0 ? layout.pages : [[]]
 
   return (
@@ -32,18 +32,18 @@ export function SheetPreview({ layout, persons, settings }: SheetPreviewProps) {
             radius={0}
             pos="relative"
             bg="white"
-            style={{ aspectRatio: `${PAGE_W} / ${PAGE_H}`, overflow: 'hidden' }}
+            style={{ aspectRatio: `${page.w} / ${page.h}`, overflow: 'hidden' }}
           >
             {settings.cutMarks === 'extended' &&
-              computeCutLines(slots, settings.margin).map((line, index) => (
+              computeCutLines(slots, settings).map((line, index) => (
                 <div
                   key={`cut-${index}`}
                   style={{
                     position: 'absolute',
-                    left: pct(line.x1, PAGE_W),
-                    top: pct(line.y1, PAGE_H),
-                    width: pct(line.x2 - line.x1, PAGE_W),
-                    height: pct(line.y2 - line.y1, PAGE_H),
+                    left: pct(line.x1, page.w),
+                    top: pct(line.y1, page.h),
+                    width: pct(line.x2 - line.x1, page.w),
+                    height: pct(line.y2 - line.y1, page.h),
                     borderTop: `1px solid ${CUT_COLOR}`,
                     borderLeft: `1px solid ${CUT_COLOR}`,
                   }}
@@ -56,10 +56,11 @@ export function SheetPreview({ layout, persons, settings }: SheetPreviewProps) {
                 alt=""
                 style={{
                   position: 'absolute',
-                  left: pct(slot.x, PAGE_W),
-                  top: pct(slot.y, PAGE_H),
-                  width: pct(PHOTO_W, PAGE_W),
-                  height: pct(PHOTO_H, PAGE_H),
+                  left: pct(slot.x, page.w),
+                  top: pct(slot.y, page.h),
+                  width: pct(photo.w, page.w),
+                  height: pct(photo.h, page.h),
+                  objectFit: 'cover',
                   outline: settings.cutMarks === 'outline' ? `1px solid ${CUT_COLOR}` : undefined,
                 }}
               />

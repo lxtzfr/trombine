@@ -1,8 +1,11 @@
 # Trombine
 
-Génère une planche de photos d'identité prête à imprimer sur une feuille A4.
+Génère des planches de photos prêtes à imprimer.
 
-- Format officiel 35 × 45 mm, visage de 32 à 36 mm du menton au sommet du crâne
+- Format des photos au choix : identité (35 × 45 mm avec repères de visage, passeport US,
+  Canada, Chine…), tirages (9 × 13, 10 × 15, 13 × 18…), carrés, ou dimensions libres
+- Format de la feuille au choix : A4, A3, A5, US Letter / Legal, tirages photo
+  (10 × 15, 13 × 18…), ou dimensions libres ; portrait ou paysage
 - Plusieurs personnes par planche, nombre d'exemplaires par personne
 - Recadrage avec repères (menton, sommet du crâne), rotation et redressement
 - Export PDF ou PNG, traits de coupe en option
@@ -22,4 +25,4 @@ TanStack Start, Mantine, icônes Tabler.
 ## Impression
 
 Imprimer à 100 % (« taille réelle »), sans « ajuster à la page », sinon les photos
-ne font plus 35 × 45 mm.
+n'ont plus la bonne taille.

@@ -1,14 +1,20 @@
-import { PHOTO_W, renderPersonCrops } from './image'
-import { PAGE_H, PAGE_W, computeCutLines, computeLayout } from './layout'
+import { aspectOf, renderPersonCrops } from './image'
+import { computeCutLines, computeLayout } from './layout'
+import type { Size } from './formats'
 import type { SheetSettings } from './layout'
 import type { Person } from './types'
 
-// 300 ppp : une page A4 reste sous la taille maximale de canvas de Safari iOS
-const PNG_DPI = 300
-const PX_PER_MM = PNG_DPI / 25.4
+const MM_PER_INCH = 25.4
+const MAX_DPI = 300
+// Taille maximale de canvas de Safari iOS (pixels)
+const MAX_CANVAS_AREA = 16_000_000
 const PNG_SIGNATURE_AND_IHDR = 33
 
-const px = (mm: number) => Math.round(mm * PX_PER_MM)
+/** 300 ppp, moins pour les grandes feuilles qui dépasseraient la limite de Safari. */
+function pngDpi(page: Size) {
+  const areaInches = (page.w / MM_PER_INCH) * (page.h / MM_PER_INCH)
+  return Math.min(MAX_DPI, Math.floor(Math.sqrt(MAX_CANVAS_AREA / areaInches)))
+}
 
 function crc32(bytes: Uint8Array) {
   let crc = ~0
@@ -49,16 +55,18 @@ function download(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-/** Une image PNG A4 par page de la planche. */
+/** Une image PNG par page de la planche. */
 export async function generatePng(persons: Person[], settings: SheetSettings) {
+  const { page, photo } = settings
+  const dpi = pngDpi(page)
+  const px = (mm: number) => Math.round((mm * dpi) / MM_PER_INCH)
   const { pages } = computeLayout(persons, settings)
-  const photoWidth = px(PHOTO_W)
-  const crops = await renderPersonCrops(persons, photoWidth)
+  const crops = await renderPersonCrops(persons, px(photo.w), aspectOf(photo))
 
   for (const [pageIndex, slots] of pages.entries()) {
     const canvas = document.createElement('canvas')
-    canvas.width = px(PAGE_W)
-    canvas.height = px(PAGE_H)
+    canvas.width = px(page.w)
+    canvas.height = px(page.h)
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas 2D indisponible')
     ctx.fillStyle = '#fff'
@@ -69,7 +77,7 @@ export async function generatePng(persons: Person[], settings: SheetSettings) {
     // Tracés avant les photos : les traits prolongés passent dessous
     if (settings.cutMarks === 'extended') {
       ctx.beginPath()
-      for (const line of computeCutLines(slots, settings.margin)) {
+      for (const line of computeCutLines(slots, settings)) {
         ctx.moveTo(px(line.x1) + 0.5, px(line.y1) + 0.5)
         ctx.lineTo(px(line.x2) + 0.5, px(line.y2) + 0.5)
       }
@@ -88,6 +96,6 @@ export async function generatePng(persons: Person[], settings: SheetSettings) {
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
     if (!blob) throw new Error('Export PNG impossible')
     const suffix = pages.length > 1 ? `-${pageIndex + 1}` : ''
-    download(await withDpi(blob, PNG_DPI), `photos-identite${suffix}.png`)
+    download(await withDpi(blob, dpi), `planche-photos${suffix}.png`)
   }
 }

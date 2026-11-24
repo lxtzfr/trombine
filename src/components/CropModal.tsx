@@ -10,17 +10,10 @@ import {
   IconZoomIn,
   IconZoomOut,
 } from '@tabler/icons-react'
-import {
-  CHIN_FROM_BOTTOM,
-  FACE_MAX,
-  FACE_MIN,
-  PHOTO_ASPECT,
-  PHOTO_H,
-  PHOTO_W,
-} from '#/lib/image'
+import type { FaceGuides as Guides, Size } from '#/lib/formats'
 import type { Person } from '#/lib/types'
 
-const MAX_PX_PER_MM = 9
+const STAGE_HEIGHT = 450
 const STAGE_PADDING = 24
 const MIN_ZOOM = 0.3
 const MAX_ZOOM = 10
@@ -33,12 +26,14 @@ export interface CropResult {
 
 interface CropModalProps {
   person: Person | null
+  photo: Size
+  guides?: Guides
   hasNext: boolean
   onClose: () => void
   onSave: (id: string, result: CropResult) => void
 }
 
-export function CropModal({ person, hasNext, onClose, onSave }: CropModalProps) {
+export function CropModal({ person, photo, guides, hasNext, onClose, onSave }: CropModalProps) {
   return (
     <Modal
       opened={person !== null}
@@ -48,13 +43,26 @@ export function CropModal({ person, hasNext, onClose, onSave }: CropModalProps) 
       centered
     >
       {person && (
-        <CropEditor key={person.id} person={person} hasNext={hasNext} onSave={onSave} />
+        <CropEditor
+          key={person.id}
+          person={person}
+          photo={photo}
+          guides={guides}
+          hasNext={hasNext}
+          onSave={onSave}
+        />
       )}
     </Modal>
   )
 }
 
-function CropEditor({ person, hasNext, onSave }: Omit<CropModalProps, 'onClose'> & { person: Person }) {
+function CropEditor({
+  person,
+  photo,
+  guides,
+  hasNext,
+  onSave,
+}: Omit<CropModalProps, 'onClose'> & { person: Person }) {
   const { ref, width } = useElementSize()
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
@@ -64,15 +72,18 @@ function CropEditor({ person, hasNext, onSave }: Omit<CropModalProps, 'onClose'>
   const [area, setArea] = useState(person.area)
 
   const rotation = quarter + tilt
-  const pxPerMm = Math.min(MAX_PX_PER_MM, (width - 2 * STAGE_PADDING) / PHOTO_W)
-  const cropSize = { width: PHOTO_W * pxPerMm, height: PHOTO_H * pxPerMm }
+  const pxPerMm = Math.min(
+    (width - 2 * STAGE_PADDING) / photo.w,
+    (STAGE_HEIGHT - 2 * STAGE_PADDING) / photo.h,
+  )
+  const cropSize = { width: photo.w * pxPerMm, height: photo.h * pxPerMm }
 
   return (
     <Stack gap="md">
       <Box
         ref={ref}
         pos="relative"
-        h={PHOTO_H * MAX_PX_PER_MM + 2 * STAGE_PADDING}
+        h={STAGE_HEIGHT}
         bg="dark.7"
         style={{ borderRadius: 'var(--mantine-radius-md)', overflow: 'hidden' }}
       >
@@ -83,7 +94,7 @@ function CropEditor({ person, hasNext, onSave }: Omit<CropModalProps, 'onClose'>
               crop={crop}
               zoom={zoom}
               rotation={rotation}
-              aspect={PHOTO_ASPECT}
+              aspect={photo.w / photo.h}
               cropSize={cropSize}
               minZoom={MIN_ZOOM}
               maxZoom={MAX_ZOOM}
@@ -95,15 +106,17 @@ function CropEditor({ person, hasNext, onSave }: Omit<CropModalProps, 'onClose'>
               onZoomChange={setZoom}
               onCropComplete={(_, pixels) => setArea(pixels)}
             />
-            <FaceGuides pxPerMm={pxPerMm} />
+            <CropGuides photo={photo} guides={guides} pxPerMm={pxPerMm} />
           </>
         )}
       </Box>
 
-      <Text size="sm" c="dimmed">
-        Placez le bas du menton sur la ligne du bas et le sommet du crâne (hors chevelure) dans la
-        bande verte : le visage mesurera alors entre {FACE_MIN} et {FACE_MAX} mm.
-      </Text>
+      {guides && (
+        <Text size="sm" c="dimmed">
+          Placez le bas du menton sur la ligne du bas et le sommet du crâne (hors chevelure) dans
+          la bande verte : le visage mesurera alors entre {guides.faceMin} et {guides.faceMax} mm.
+        </Text>
+      )}
 
       <Group gap="sm" wrap="nowrap">
         <IconZoomOut size={18} />
@@ -164,10 +177,39 @@ function CropEditor({ person, hasNext, onSave }: Omit<CropModalProps, 'onClose'>
   )
 }
 
-function FaceGuides({ pxPerMm }: { pxPerMm: number }) {
-  const chinY = (PHOTO_H - CHIN_FROM_BOTTOM) * pxPerMm
-  const crownTop = (PHOTO_H - CHIN_FROM_BOTTOM - FACE_MAX) * pxPerMm
-  const crownHeight = (FACE_MAX - FACE_MIN) * pxPerMm
+interface CropGuidesProps {
+  photo: Size
+  guides?: Guides
+  pxPerMm: number
+}
+
+function CropGuides({ photo, guides, pxPerMm }: CropGuidesProps) {
+  return (
+    <Box
+      pos="absolute"
+      top="50%"
+      left="50%"
+      w={photo.w * pxPerMm}
+      h={photo.h * pxPerMm}
+      style={{ transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}
+    >
+      {guides && <FaceGuides photo={photo} guides={guides} pxPerMm={pxPerMm} />}
+      <Box
+        pos="absolute"
+        top={0}
+        bottom={0}
+        left="50%"
+        style={{ borderLeft: '1px dashed rgba(255, 255, 255, 0.6)' }}
+      />
+    </Box>
+  )
+}
+
+function FaceGuides({ photo, guides, pxPerMm }: Required<CropGuidesProps>) {
+  const { faceMin, faceMax, chinFromBottom } = guides
+  const chinY = (photo.h - chinFromBottom) * pxPerMm
+  const crownTop = (photo.h - chinFromBottom - faceMax) * pxPerMm
+  const crownHeight = (faceMax - faceMin) * pxPerMm
   const label = {
     position: 'absolute',
     right: 4,
@@ -178,14 +220,7 @@ function FaceGuides({ pxPerMm }: { pxPerMm: number }) {
   } as const
 
   return (
-    <Box
-      pos="absolute"
-      top="50%"
-      left="50%"
-      w={PHOTO_W * pxPerMm}
-      h={PHOTO_H * pxPerMm}
-      style={{ transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}
-    >
+    <>
       <Box
         pos="absolute"
         left={0}
@@ -207,13 +242,6 @@ function FaceGuides({ pxPerMm }: { pxPerMm: number }) {
         style={{ borderTop: `2px solid ${GUIDE_COLOR}` }}
       />
       <span style={{ ...label, top: chinY + 4 }}>Menton</span>
-      <Box
-        pos="absolute"
-        top={0}
-        bottom={0}
-        left="50%"
-        style={{ borderLeft: '1px dashed rgba(255, 255, 255, 0.6)' }}
-      />
-    </Box>
+    </>
   )
 }

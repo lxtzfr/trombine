@@ -1,8 +1,4 @@
-import { PHOTO_H, PHOTO_W } from './image'
-
-// A4 portrait (mm)
-export const PAGE_W = 210
-export const PAGE_H = 297
+import type { Size } from './formats'
 
 /**
  * - `outline` : cadre autour de chaque photo
@@ -18,6 +14,14 @@ export interface Line {
 }
 
 export interface SheetSettings {
+  /** Format de la feuille (mm) */
+  page: Size
+  /** Preset de la feuille, ou `custom` */
+  pagePreset: string
+  /** Format de chaque photo (mm) */
+  photo: Size
+  /** Preset de la photo, ou `custom` */
+  photoPreset: string
   /** Marge minimale autour de la planche (mm) */
   margin: number
   /** Espace entre deux photos (mm) */
@@ -36,16 +40,21 @@ export interface SheetLayout {
   pages: Slot[][]
   cols: number
   rows: number
+  /** Au moins une photo tient sur la feuille avec ces marges */
+  fits: boolean
 }
 
 export function computeLayout(
   persons: { id: string; copies: number }[],
-  { margin, gap, newRowPerPerson }: SheetSettings,
+  { page, photo, margin, gap, newRowPerPerson }: SheetSettings,
 ): SheetLayout {
-  const cols = Math.max(1, Math.floor((PAGE_W - 2 * margin + gap) / (PHOTO_W + gap)))
-  const rows = Math.max(1, Math.floor((PAGE_H - 2 * margin + gap) / (PHOTO_H + gap)))
+  const fitCols = Math.floor((page.w - 2 * margin + gap) / (photo.w + gap))
+  const fitRows = Math.floor((page.h - 2 * margin + gap) / (photo.h + gap))
+  const fits = fitCols >= 1 && fitRows >= 1
+  const cols = Math.max(1, fitCols)
+  const rows = Math.max(1, fitRows)
   const perPage = cols * rows
-  const originX = (PAGE_W - (cols * PHOTO_W + (cols - 1) * gap)) / 2
+  const originX = (page.w - (cols * photo.w + (cols - 1) * gap)) / 2
 
   const cells: (string | null)[] = []
   for (const person of persons) {
@@ -64,12 +73,12 @@ export function computeLayout(
     const page = (pages[pageIndex] ??= [])
     page.push({
       personId,
-      x: originX + (inPage % cols) * (PHOTO_W + gap),
-      y: margin + Math.floor(inPage / cols) * (PHOTO_H + gap),
+      x: originX + (inPage % cols) * (photo.w + gap),
+      y: margin + Math.floor(inPage / cols) * (photo.h + gap),
     })
   })
 
-  return { pages, cols, rows }
+  return { pages, cols, rows, fits }
 }
 
 /**
@@ -77,19 +86,22 @@ export function computeLayout(
  * du haut / de la gauche de la feuille et s'arrête une marge après la dernière
  * photo, sans traverser la partie vide de la page.
  */
-export function computeCutLines(slots: Slot[], margin: number): Line[] {
+export function computeCutLines(
+  slots: Slot[],
+  { page, photo, margin }: Pick<SheetSettings, 'page' | 'photo' | 'margin'>,
+): Line[] {
   if (slots.length === 0) return []
   // Arrondi : avec un espacement nul, deux bords voisins doivent se confondre
   const round = (value: number) => Math.round(value * 1000) / 1000
   const xs = new Set<number>()
   const ys = new Set<number>()
   for (const slot of slots) {
-    xs.add(round(slot.x)).add(round(slot.x + PHOTO_W))
-    ys.add(round(slot.y)).add(round(slot.y + PHOTO_H))
+    xs.add(round(slot.x)).add(round(slot.x + photo.w))
+    ys.add(round(slot.y)).add(round(slot.y + photo.h))
   }
   const left = Math.min(...xs)
-  const xEnd = Math.min(PAGE_W, Math.max(...xs) + left)
-  const yEnd = Math.min(PAGE_H, Math.max(...ys) + margin)
+  const xEnd = Math.min(page.w, Math.max(...xs) + left)
+  const yEnd = Math.min(page.h, Math.max(...ys) + margin)
 
   return [
     ...[...ys].map((y) => ({ x1: 0, y1: y, x2: xEnd, y2: y })),

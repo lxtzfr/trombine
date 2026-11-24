@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Alert,
@@ -26,16 +26,24 @@ import {
 } from '@tabler/icons-react'
 import { CropModal } from '#/components/CropModal'
 import type { CropResult } from '#/components/CropModal'
+import { FormatPicker } from '#/components/FormatPicker'
 import { PersonCard } from '#/components/PersonCard'
 import { SheetPreview } from '#/components/SheetPreview'
 import {
-  FACE_MAX,
-  FACE_MIN,
-  PHOTO_H,
-  PHOTO_W,
+  DEFAULT_PAGE,
+  DEFAULT_PHOTO,
+  PAGE_PRESETS,
+  PHOTO_PRESETS,
+  faceGuides,
+  formatSize,
+} from '#/lib/formats'
+import type { Size } from '#/lib/formats'
+import {
   THUMB_WIDTH_PX,
+  aspectOf,
   defaultArea,
   loadImage,
+  refitArea,
   renderCrop,
 } from '#/lib/image'
 import { computeLayout } from '#/lib/layout'
@@ -56,14 +64,18 @@ const CUT_MARKS_OPTIONS: { value: CutMarks; label: string }[] = [
 const DEFAULT_COPIES = 4
 const SAVE_DELAY_MS = 300
 const DEFAULT_SETTINGS: SheetSettings = {
+  page: { w: DEFAULT_PAGE.w, h: DEFAULT_PAGE.h },
+  pagePreset: DEFAULT_PAGE.id,
+  photo: { w: DEFAULT_PHOTO.w, h: DEFAULT_PHOTO.h },
+  photoPreset: DEFAULT_PHOTO.id,
   margin: 10,
   gap: 2,
   cutMarks: 'outline',
   newRowPerPerson: false,
 }
 
-function makeThumb(img: HTMLImageElement, { area, rotation }: CropResult) {
-  return renderCrop(img, area, rotation, THUMB_WIDTH_PX).toDataURL('image/jpeg', 0.85)
+function makeThumb(img: HTMLImageElement, { area, rotation }: CropResult, aspect: number) {
+  return renderCrop(img, area, rotation, THUMB_WIDTH_PX, aspect).toDataURL('image/jpeg', 0.85)
 }
 
 function Home() {
@@ -74,6 +86,8 @@ function Home() {
   const [generating, setGenerating] = useState<ExportFormat | null>(null)
   // Tant que la planche enregistrée n'est pas relue, on ne sauvegarde rien par-dessus
   const [restored, setRestored] = useState(false)
+  // Seul le dernier changement de format applique ses recadrages
+  const refitToken = useRef(0)
 
   const reportStorageError = () =>
     setError("Sauvegarde dans le navigateur indisponible : la planche ne sera pas conservée.")
@@ -98,6 +112,9 @@ function Home() {
   }, [restored, persons, settings])
 
   const layout = computeLayout(persons, settings)
+  const aspect = aspectOf(settings.photo)
+  const guides = faceGuides(settings.photo, settings.photoPreset)
+  const perPage = layout.fits ? layout.cols * layout.rows : 0
   const totalPhotos = persons.reduce((sum, person) => sum + person.copies, 0)
   const editing = persons.find((person) => person.id === editingId) ?? null
   const nextToCrop = (afterId: string) =>
@@ -119,7 +136,10 @@ function Home() {
       const src = URL.createObjectURL(file)
       try {
         const img = await loadImage(src)
-        const crop = { area: defaultArea(img.naturalWidth, img.naturalHeight), rotation: 0 }
+        const crop = {
+          area: defaultArea(img.naturalWidth, img.naturalHeight, aspect),
+          rotation: 0,
+        }
         const id = crypto.randomUUID()
         await savePhoto(id, file).catch(reportStorageError)
         added.push({
@@ -128,7 +148,7 @@ function Home() {
           src,
           ...crop,
           copies: DEFAULT_COPIES,
-          thumb: makeThumb(img, crop),
+          thumb: makeThumb(img, crop, aspect),
           cropped: false,
         })
       } catch {
@@ -140,6 +160,37 @@ function Home() {
     if (added.length === 0) return
     setPersons((current) => [...current, ...added])
     setEditingId((current) => current ?? added[0].id)
+  }
+
+  /**
+   * Nouveau format de photo : si le ratio change, chaque cadrage est adapté
+   * (même centre, même surface) et doit être revérifié.
+   */
+  const changePhotoFormat = async (photo: Size, photoPreset: string) => {
+    updateSettings({ photo, photoPreset })
+    const newAspect = aspectOf(photo)
+    const token = ++refitToken.current
+    if (Math.abs(newAspect - aspect) < 1e-6) return
+    try {
+      const refitted = await Promise.all(
+        persons.map(async (person) => {
+          const area = refitArea(person.area, newAspect)
+          const img = await loadImage(person.src)
+          const thumb = makeThumb(img, { area, rotation: person.rotation }, newAspect)
+          return [person.id, { area, thumb }] as const
+        }),
+      )
+      if (token !== refitToken.current) return
+      const patches = new Map(refitted)
+      setPersons((current) =>
+        current.map((person) => {
+          const patch = patches.get(person.id)
+          return patch ? { ...person, ...patch, cropped: false } : person
+        }),
+      )
+    } catch (cause) {
+      setError(`Recadrage impossible : ${cause instanceof Error ? cause.message : cause}`)
+    }
   }
 
   const removePerson = (id: string) => {
@@ -161,7 +212,7 @@ function Home() {
     const person = persons.find((candidate) => candidate.id === id)
     if (!person) return
     const img = await loadImage(person.src)
-    updatePerson(id, { ...crop, thumb: makeThumb(img, crop), cropped: true })
+    updatePerson(id, { ...crop, thumb: makeThumb(img, crop, aspect), cropped: true })
     setEditingId(nextToCrop(id)?.id ?? null)
   }
 
@@ -194,9 +245,9 @@ function Home() {
             </Title>
           </Group>
           <Text c="dimmed" size="sm">
-            Format {PHOTO_W} × {PHOTO_H} mm, visage de {FACE_MIN} à {FACE_MAX} mm du menton au
-            sommet du crâne. Planche A4 prête à imprimer. Photos et cadrages restent
-            dans votre navigateur, où ils sont conservés d'une visite à l'autre.
+            Planches de photos prêtes à imprimer : photos d'identité, tirages ou formats
+            personnalisés, sur la feuille de votre choix. Photos et cadrages restent dans votre
+            navigateur, où ils sont conservés d'une visite à l'autre.
           </Text>
         </div>
 
@@ -234,11 +285,42 @@ function Home() {
                 <PersonCard
                   key={person.id}
                   person={person}
+                  aspect={aspect}
                   onChange={updatePerson}
                   onCrop={setEditingId}
                   onRemove={removePerson}
                 />
               ))}
+
+              <Paper withBorder p="sm">
+                <Stack gap="sm">
+                  <Text fw={500} size="sm">
+                    Formats
+                  </Text>
+                  <FormatPicker
+                    label="Format des photos"
+                    presets={PHOTO_PRESETS}
+                    presetId={settings.photoPreset}
+                    size={settings.photo}
+                    swapLabel="Photo en portrait / paysage"
+                    onChange={changePhotoFormat}
+                  />
+                  <FormatPicker
+                    label="Format de la feuille"
+                    presets={PAGE_PRESETS}
+                    presetId={settings.pagePreset}
+                    size={settings.page}
+                    swapLabel="Feuille en portrait / paysage"
+                    onChange={(page, pagePreset) => updateSettings({ page, pagePreset })}
+                  />
+                  {!layout.fits && (
+                    <Alert color="orange" icon={<IconAlertTriangle size={18} />} p="xs">
+                      La photo ({formatSize(settings.photo)}) ne tient pas sur la feuille avec ces
+                      marges : elle sera rognée.
+                    </Alert>
+                  )}
+                </Stack>
+              </Paper>
 
               <Paper withBorder p="sm">
                 <Stack gap="sm">
@@ -316,7 +398,7 @@ function Home() {
 
               <Alert color="blue" icon={<IconPrinter size={18} />}>
                 Imprimez à 100 % (« taille réelle »), sans « ajuster à la page », sinon les photos
-                ne feront plus {PHOTO_W} × {PHOTO_H} mm.
+                ne feront plus {formatSize(settings.photo)}.
               </Alert>
             </Stack>
           </Grid.Col>
@@ -324,9 +406,9 @@ function Home() {
           <Grid.Col span={{ base: 12, md: 7 }}>
             <Stack gap="xs">
               <Text size="sm" c="dimmed">
-                {totalPhotos} photo{totalPhotos > 1 ? 's' : ''} · {layout.pages.length || 1} page
-                {layout.pages.length > 1 ? 's' : ''} A4 · {layout.cols * layout.rows} photos max
-                par page
+                {totalPhotos} photo{totalPhotos > 1 ? 's' : ''} de {formatSize(settings.photo)} ·{' '}
+                {layout.pages.length || 1} page{layout.pages.length > 1 ? 's' : ''} de{' '}
+                {formatSize(settings.page)} · {perPage} photo{perPage > 1 ? 's' : ''} max par page
               </Text>
               <SheetPreview layout={layout} persons={persons} settings={settings} />
             </Stack>
@@ -336,6 +418,8 @@ function Home() {
 
       <CropModal
         person={editing}
+        photo={settings.photo}
+        guides={guides}
         hasNext={editing !== null && nextToCrop(editing.id) !== undefined}
         onClose={() => setEditingId(null)}
         onSave={saveCrop}

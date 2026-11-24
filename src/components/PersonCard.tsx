@@ -1,27 +1,28 @@
 import { ActionIcon, Badge, Button, Card, Group, NumberInput, Stack, TextInput } from '@mantine/core'
 import { IconCrop, IconTrash } from '@tabler/icons-react'
-import { PHOTO_ASPECT } from '#/lib/image'
 import type { Person } from '#/lib/types'
 
-const THUMB_WIDTH = 70
+const THUMB_SIDE = 80
 export const MAX_COPIES = 100
 
 interface PersonCardProps {
   person: Person
+  /** Ratio largeur / hauteur des photos */
+  aspect: number
   onChange: (id: string, patch: Partial<Person>) => void
   onCrop: (id: string) => void
   onRemove: (id: string) => void
 }
 
-export function PersonCard({ person, onChange, onCrop, onRemove }: PersonCardProps) {
+export function PersonCard({ person, aspect, onChange, onCrop, onRemove }: PersonCardProps) {
   return (
     <Card withBorder padding="sm">
       <Group wrap="nowrap" align="flex-start">
         <img
           src={person.thumb}
           alt={person.name}
-          width={THUMB_WIDTH}
-          height={THUMB_WIDTH / PHOTO_ASPECT}
+          width={aspect >= 1 ? THUMB_SIDE : THUMB_SIDE * aspect}
+          height={aspect >= 1 ? THUMB_SIDE / aspect : THUMB_SIDE}
           style={{ border: '1px solid var(--mantine-color-default-border)', cursor: 'pointer' }}
           onClick={() => onCrop(person.id)}
         />
