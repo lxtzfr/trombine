@@ -22,6 +22,12 @@ npm run build
 
 TanStack Start, Mantine, icônes Tabler.
 
+## Publication
+
+Chaque push sur `main` publie le site sur GitHub Pages
+(https://lxtzfr.github.io/trombine/) via [.github/workflows/pages.yml](.github/workflows/pages.yml).
+La page est prérendue en HTML statique ; `BASE_PATH` fixe le sous-dossier de publication.
+
 ## Impression
 
 Imprimer à 100 % (« taille réelle »), sans « ajuster à la page », sinon les photos
